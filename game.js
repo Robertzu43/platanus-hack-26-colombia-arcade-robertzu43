@@ -7,14 +7,19 @@ const K={};for(const [c,a]of Object.entries(CABINET_KEYS))for(const k of a)K[nor
 new Phaser.Game({type:Phaser.AUTO,width:W,height:H,parent:'game-root',backgroundColor:'#8ed8ef',physics:{default:'arcade',arcade:{gravity:{y:1100},debug:false}},scale:{mode:Phaser.Scale.FIT,autoCenter:Phaser.Scale.CENTER_BOTH},scene:{create,update}});
 
 function norm(k){return typeof k==='string'?(k===' '?'space':k.toLowerCase()):''}
-function newRun(){return {score:0,best:0,speed:220,time:0,spawn:720,step:0}}
-function nextSpawn(n){return ['barrier','pothole','bug','bus'][n%4]}
-function nextDelay(speed,r){return Math.max(390,speed*1.45)+r*130}
+function newRun(){return {score:0,best:0,speed:220,time:0,spawn:600,step:0,bag:[],last:''}}
+function nextSpawn(r,rand=Math.random){
+  if(!r.bag.length){r.bag=['barrier','pothole','bug','bus'];for(let i=3;i;i--){const j=Math.floor(rand()*(i+1));[r.bag[i],r.bag[j]]=[r.bag[j],r.bag[i]]}if(r.bag[3]===r.last)[r.bag[0],r.bag[3]]=[r.bag[3],r.bag[0]]}
+  return r.last=r.bag.pop();
+}
+function runSpeed(t,n){return Math.min(540,220+t*7+n*4)}
+function nextDelay(_,r,n){return Math.max(360,460-n*3)+r*100}
 function validScore(v){return Number.isFinite(v)&&v>=0&&v<1e9}
 function store(){return window.platanusArcadeStorage||{async get(k){try{const v=localStorage.getItem(k);return {found:v!==null,value:v===null?null:JSON.parse(v)}}catch(_){return {found:false,value:null}}},async set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(_){}}}}
 function tone(s,f,d=.08){try{const c=s.sound.context||new AudioContext(),o=c.createOscillator(),g=c.createGain(),t=c.currentTime;o.frequency.value=f;o.type='square';g.gain.setValueAtTime(.07,t);g.gain.exponentialRampToValueAtTime(.001,t+d);o.connect(g);g.connect(c.destination);o.start(t);o.stop(t+d)}catch(_){}}
+function mountain(g,x,top,base,half,color){g.fillStyle(color);const n=Math.ceil((base-top)/12);for(let i=0;i<n;i++){const w=Math.round(half*(i+1)/n);g.fillRect(x-w,top+i*12,w*2,12)}}
 function create(){
-  const s=this;s.phase='title';s.keys={held:{},pressed:{}};s.run=newRun();s.items=[];s.shots=[];s.deco=[];s.best=0;
+  const s=this;s.phase='instructions';s.keys={held:{},pressed:{}};s.run=newRun();s.items=[];s.shots=[];s.deco=[];s.best=0;
   window.addEventListener('keydown',s.down=e=>{const c=K[norm(e.key)];if(c){if(!s.keys.held[c])s.keys.pressed[c]=1;s.keys.held[c]=1}});
   window.addEventListener('keyup',s.up=e=>{const c=K[norm(e.key)];if(c)s.keys.held[c]=0});
   s.events.once('shutdown',()=>{window.removeEventListener('keydown',s.down);window.removeEventListener('keyup',s.up)});
@@ -23,8 +28,8 @@ function create(){
   refresh(s);
 }
 function drawCity(s){
-  s.add.rectangle(400,300,800,600,0x8ed8ef);s.add.circle(690,92,42,0xffe58a);
-  const hills=s.add.graphics();hills.fillStyle(0x9dcca8).fillTriangle(0,480,135,245,315,480).fillTriangle(205,480,390,285,565,480).fillTriangle(435,480,625,225,800,480);hills.fillStyle(0xb0dab1).fillTriangle(0,480,70,335,180,480).fillTriangle(520,480,710,305,800,480);
+  s.add.rectangle(400,300,800,600,0x8ed8ef);const sun=s.add.graphics();sun.fillStyle(0xffe58a);for(const [i,w]of[32,48,64,72,72,64,48,32].entries())sun.fillRect(690-w/2,60+i*8,w,8);
+  const hills=s.add.graphics();mountain(hills,135,245,480,180,0x9dcca8);mountain(hills,390,285,480,185,0x9dcca8);mountain(hills,625,225,480,190,0x9dcca8);mountain(hills,70,335,480,110,0xb0dab1);mountain(hills,710,305,480,190,0xb0dab1);
   for(let i=0;i<10;i++){const x=42+i*86,h=68+(i%4)*25;s.add.rectangle(x,510-h/2,76,h,0x9ac9d8);for(let y=0;y<3;y++)for(let j=0;j<3;j++)s.add.rectangle(x-22+j*22,526-h+y*18,9,11,0xccecf3)}
   s.add.rectangle(400,556,800,88,0x33434a);s.add.rectangle(400,514,800,7,0xf1bf58);s.ground=s.add.rectangle(400,566,800,68,0x29343a);s.physics.add.existing(s.ground,true);
   for(let x=70;x<800;x+=170)s.add.rectangle(x,572,85,5,0xe9eef0,.55);
@@ -59,10 +64,12 @@ function drawObstacle(g,k){
 }
 function makeUi(s){
   const t={fontFamily:'monospace',fontStyle:'bold',align:'center'};
+  s.panel=s.add.rectangle(400,300,620,355,0xdff5ef,.9).setStrokeStyle(6,0x16313d);
   s.hud=s.add.text(400,48,'',{...t,fontSize:'18px',color:'#16313d'}).setOrigin(.5);
   s.msg=s.add.text(400,220,'',{...t,fontSize:'34px',color:'#fff8d4',stroke:'#16313d',strokeThickness:6}).setOrigin(.5);
   s.help=s.add.text(400,285,'',{...t,fontSize:'15px',color:'#16313d',lineSpacing:8}).setOrigin(.5);
   s.flash=s.add.text(400,86,'',{...t,fontSize:'16px',color:'#fff8d4',stroke:'#16313d',strokeThickness:4}).setOrigin(.5);
+  s.guide=[s.add.image(245,425,'barrier'),s.add.image(360,438,'pothole'),s.add.image(475,430,'bug'),s.add.image(620,425,'bus')];
 }
 function makePlayers(s){
   s.players=[player(s,290,'p1','P1'),player(s,465,'p2','P2')];
@@ -71,11 +78,13 @@ function player(s,x,key,label){
   const p=s.physics.add.image(x,500,`${key}0`);p.body.setCollideWorldBounds(true).setSize(26,48).setOffset(11,16);p.hp=2;p.label=label;p.frames=[`${key}0`,`${key}1`,`${key}2`];p.inv=0;p.live=true;s.physics.add.collider(p,s.ground);return p;
 }
 function refresh(s){
-  const h=s.players.map(p=>`${p.label} ${p.live?'♥'.repeat(p.hp):'OUT'}`).join('   ');
+  const h=s.players.map(p=>`${p.label} ${p.live?'♥'.repeat(p.hp):'OUT'}`).join('   '),intro=s.phase==='instructions';
+  s.panel.setVisible(intro);s.guide.forEach(x=>x.setVisible(intro));
   s.hud.setText(s.phase==='play'?`${h}\nTEAM ${Math.floor(s.run.score)}  BEST ${Math.floor(s.best)}`:`BEST TEAM RUN  ${Math.floor(s.best)}`);
-  if(s.phase==='title'){s.msg.setText('STARTUP RUN');s.help.setText('BOGOTÁ CO-OP DASH\nP1: U JUMP · I BANANA\nP2: R JUMP · T BANANA\nPRESS START TO RUN');}
-  if(s.phase==='pause'){s.msg.setText('PAUSED');s.help.setText('PRESS START TO RESUME');}
-  if(s.phase==='end'){s.msg.setText(`RUN OVER  ${Math.floor(s.run.score)}`);s.help.setText('PRESS START TO RUN AGAIN');}
+  if(intro){s.msg.setY(165).setText('HOW TO RUN');s.help.setOrigin(.5,0).setY(220).setText('P1: U JUMP · I BANANA\nP2: R JUMP · T BANANA\n\nDODGE BARRIER, POTHOLE & BUS\nBANANAS DESTROY BUGS\n\nPRESS START TO CONTINUE');}
+  if(s.phase==='title'){s.msg.setY(220).setText('STARTUP RUN');s.help.setOrigin(.5).setY(285).setText('BOGOTÁ CO-OP DASH\nREADY?\nPRESS START TO RUN');}
+  if(s.phase==='pause'){s.msg.setY(220).setText('PAUSED');s.help.setOrigin(.5).setY(285).setText('PRESS START TO RESUME');}
+  if(s.phase==='end'){s.msg.setY(220).setText(`RUN OVER  ${Math.floor(s.run.score)}`);s.help.setOrigin(.5).setY(285).setText('PRESS START TO RUN AGAIN');}
 }
 function begin(s){
   s.physics.resume();
@@ -85,12 +94,13 @@ function begin(s){
 function pressed(s,...a){for(const k of a)if(s.keys.pressed[k]){delete s.keys.pressed[k];return true}return false}
 function update(_,d){
   const s=this,dt=Math.min(d,50)/1000;
+  if(s.phase==='instructions'){if(pressed(s,'START1','START2')){s.phase='title';refresh(s);tone(s,520,.1)}clear(s);return}
   if(s.phase==='title'||s.phase==='end'){if(pressed(s,'START1','START2','P1_1','P2_1'))begin(s);clear(s);return}
   if(s.phase==='pause'){if(pressed(s,'START1','START2')){s.phase='play';s.physics.resume();s.msg.setText('');s.help.setText('');refresh(s)}clear(s);return}
   if(s.phase!=='play')return;
   if(pressed(s,'START1','START2')){s.phase='pause';s.physics.pause();refresh(s);clear(s);return}
-  s.run.time+=dt;s.run.score+=s.run.speed*dt/8;s.run.speed=Math.min(390,220+s.run.time*3);s.run.spawn-=s.run.speed*dt;
-  if(s.run.spawn<=0){spawn(s,nextSpawn(s.run.step++));s.run.spawn=nextDelay(s.run.speed,Math.random())}
+  s.run.time+=dt;s.run.score+=s.run.speed*dt/8;s.run.speed=runSpeed(s.run.time,s.run.step);s.run.spawn-=s.run.speed*dt;
+  if(s.run.spawn<=0){spawn(s,nextSpawn(s.run));s.run.step++;s.run.spawn=nextDelay(s.run.speed,Math.random(),s.run.step)}
   for(let i=s.items.length-1;i>=0;i--){const o=s.items[i];o.x-=s.run.speed*dt;if(o.x<-60){o.destroy();s.items.splice(i,1);continue}for(const p of s.players)if(p.live&&s.physics.overlap(p,o))hit(s,p,o)}
   for(let i=s.shots.length-1;i>=0;i--){const q=s.shots[i];q.x+=530*dt;if(q.x>850){q.destroy();s.shots.splice(i,1);continue}for(let j=s.items.length-1;j>=0;j--){const o=s.items[j];if(o.kind==='bug'&&s.physics.overlap(q,o)){s.run.score+=100;tone(s,900);q.destroy();o.destroy();s.shots.splice(i,1);s.items.splice(j,1);break}}}
   s.players.forEach((p,i)=>{if(!p.live)return;if(p.inv>0){p.inv-=dt;p.alpha=Math.floor(p.inv*18)%2?.35:1}else p.alpha=1;const jump=i?'P2_1':'P1_1',fire=i?'P2_2':'P1_2';p.setTexture(p.body.blocked.down?p.frames[(Math.floor(s.run.time*8)+i)%2]:p.frames[2]);if(pressed(s,jump)&&p.body.blocked.down){p.body.setVelocityY(-510);tone(s,420)}if(pressed(s,fire))shoot(s,p)});
